@@ -1,0 +1,513 @@
+Landscape: BTR-HCP
+Regions:
+    cn-north-1:
+      Alias: BJS
+    cn-northwest-1:
+      Alias: ZHY
+Resources:
+  HCP:
+     Template: /sap/systems
+  btrvpc:
+     Template: /ec2/vpcs
+     PhysicalId: vpc-0c9bf4c52f9b227af
+  btrappprd01az1:
+     Template: /ec2/subnets
+     PhysicalId: subnet-00221716e97a8b6bf
+  btrappprd01az2:
+     Template: /ec2/subnets
+     PhysicalId: subnet-0ee3f69683c1d7043
+  btrdbprd01az1:
+     Template: /ec2/subnets
+     PhysicalId: subnet-0af52ed99eb66c3a0
+  btrdbprd01az2:
+     Template: /ec2/subnets
+     PhysicalId: subnet-0d41f03caed292369
+
+#SGs
+  sapefssg:
+     Template: /ec2/security-groups
+     PhysicalId: sg-0a7df87e89c51879c
+  sapappsg:
+     Template: /ec2/security-groups
+     PhysicalId: sg-00c3a334be2554188
+  sapdbsg:
+     Template: /ec2/security-groups
+     PhysicalId: sg-01774660d5991319a
+  sapgeneralsg:
+     Template: /ec2/security-groups
+     PhysicalId: sg-0e9283e80e9ac49b5
+  allgeneralsg:
+     Template: /ec2/security-groups
+     PhysicalId: sg-02777008f6067e762
+
+  sapmedias3:
+     Template: /s3/buckets/{sap-media}
+     PhysicalId: btr-sapinstallmedia
+  sapshares3:
+     Template: /s3/buckets/{sap-share}
+     PhysicalId: btr-sap-on-aws
+
+  hcpefs:
+     Template: /efs/filesystems/globalfs
+  hcpmnttgtaz1:
+     Template: /efs/mnttgts/globalfs
+     Properties:
+         FileSystemId: !Ref hcpefs
+         SubnetId: !Ref btrappprd01az1
+         SecurityGroups: [ !Ref sapefssg ]
+  hcpmnttgtaz2:
+     Template: /efs/mnttgts/globalfs
+     Properties:
+         FileSystemId: !Ref hcpefs
+         SubnetId: !Ref btrappprd01az2
+         SecurityGroups: [ !Ref sapefssg ]
+
+#DB
+  hcpdbtenant:
+     Template: /sap/databases/hdb/tenant
+     System: HCP
+     Properties:
+         DBName: HCP
+     DBInstance: hcpdbinstance
+  hcpdbinstance:
+     Template: /sap/instances/sapdb/ha
+     System: HCP
+     Properties:
+         DBType: hdb
+         SID: HHP
+         InstanceName: HDB00
+         InstanceNumber: 00
+         Role: HDB
+         OVIP: 172.161.255.13
+         OVIPVirtualHostname: bschhp
+     HACluster: hcpdbcluster
+  hcpdbcluster:
+     #Type: BCS::HAC::SLES
+     Template: /ha/clusters
+     Properties:
+         Provider: pcmk
+         Packages:
+          - Name: pacemaker
+          - Name: csync2
+          - Name: corosync
+     HAClusterNodes: [ bschhpa, bschhpb ]
+
+  bschhpa:
+     #Type: AWS::EC2::Instance
+     Template: /ec2/instances/sapdb/ha/hdb
+     FileSystems:
+        +data:
+            Role: hdbdata
+            Volumes:
+                - DeviceName: "/dev/sdb"
+                  Ebs:
+                    VolumeSize: "150"
+                - DeviceName: "/dev/sdc"
+                  Ebs:
+                    VolumeSize: "150"
+                - DeviceName: "/dev/sdd"
+                  Ebs:
+                    VolumeSize: "150"
+        +log:
+            Role: hdblog
+            Volumes:
+                - DeviceName: "/dev/sde"
+                  Ebs:
+                    VolumeSize: "150"
+                - DeviceName: "/dev/sdf"
+                  Ebs:
+                    VolumeSize: "150"
+        +share:
+            Role: hdbshare
+            Volumes:
+                - DeviceName: "/dev/sdg"
+                  Ebs:
+                    VolumeSize: "50"
+        +usrsap:
+            Role: usrsap
+     Properties:
+        InstanceType: r5.16xlarge
+        SubnetId: !Ref btrdbprd01az1
+        ImageId: ami-047538b8ff65f3422
+        UserData: |
+            #cloud-config
+            hostname: bschhpa
+            runcmd:
+              - mkdir /tmp/ssm
+              - cd /tmp/ssm
+              - wget https://s3.cn-northwest-1.amazonaws.com.cn/amazon-ssm-cn-northwest-1/latest/linux_amd64/amazon-ssm-agent.rpm
+              - sudo rpm --install amazon-ssm-agent.rpm
+              - sudo systemctl status amazon-ssm-agent
+        SecurityGroupIds:
+            - !Ref sapdbsg
+            - !Ref sapgeneralsg
+            - !Ref allgeneralsg
+        EbsOptimized: true
+        KeyName: hcm-prd-hanaa
+        PrivateIpAddress: 172.17.4.12
+        Tags:
+           - Key: Name
+             Value: bschhpa
+
+  bschhpb:
+     #Type: AWS::EC2::Instance
+     Template: /ec2/instances/sapdb/ha/hdb
+     FileSystems:
+        +data:
+            Role: hdbdata
+            Volumes:
+                - DeviceName: "/dev/sdb"
+                  Ebs:
+                    VolumeSize: "150"
+                - DeviceName: "/dev/sdc"
+                  Ebs:
+                    VolumeSize: "150"
+                - DeviceName: "/dev/sdd"
+                  Ebs:
+                    VolumeSize: "150"
+        +log:
+            Role: hdblog
+            Volumes:
+                - DeviceName: "/dev/sde"
+                  Ebs:
+                    VolumeSize: "150"
+                - DeviceName: "/dev/sdf"
+                  Ebs:
+                    VolumeSize: "150"
+        +share:
+            Role: hdbshare
+            Volumes:
+                - DeviceName: "/dev/sdg"
+                  Ebs:
+                    VolumeSize: "50"
+        +usrsap:
+            Role: usrsap
+     Properties:
+        InstanceType: r5.16xlarge
+        SubnetId: !Ref btrdbprd01az2
+        ImageId: ami-047538b8ff65f3422
+        UserData: |
+            #cloud-config
+            hostname: bschhpb
+            runcmd:
+              - mkdir /tmp/ssm
+              - cd /tmp/ssm
+              - wget https://s3.cn-northwest-1.amazonaws.com.cn/amazon-ssm-cn-northwest-1/latest/linux_amd64/amazon-ssm-agent.rpm
+              - sudo rpm --install amazon-ssm-agent.rpm
+              - sudo systemctl status amazon-ssm-agent
+        SecurityGroupIds:
+            - !Ref sapdbsg
+            - !Ref sapgeneralsg
+            - !Ref allgeneralsg
+        EbsOptimized: true
+        KeyName: hcm-prd-hanab
+        PrivateIpAddress: 172.17.14.12
+        Tags:
+           - Key: Name
+             Value: bschhpb
+
+#ASCS
+  hcpappcluster:
+     #Type: BCS::HAC::SLES
+     Template: /ha/clusters
+     Properties:
+         Provider: pcmk
+         Packages:
+          - Name: pacemaker
+          - Name: csync2
+          - Name: corosync
+          - Name: sap_suse_cluster_connector
+     HAClusterNodes: [ bschcpa, bschcpb ]
+  hcpascs:
+     Template: /sap/instances/sapapp/ha
+     System: HCP
+     Properties:
+         InstanceName: ASCS01
+         InstanceNumber: 01
+         Role: ASCS
+         StartProfile: /sapmnt/HCP/profile/HCP_ASCS01_bschcpascs
+         OVIP: 172.161.255.11
+         OVIPVirtualHostname: bschcpascs
+     HACluster: hcpappcluster
+  hcpers:
+     Template: /sap/instances/sapapp/ha
+     System: HCP
+     Properties:
+         InstanceName: ERS11
+         InstanceNumber: 11
+         Role: ERS
+         StartProfile: /sapmnt/HCP/profile/HCP_ERS11_bschcpers
+         OVIP: 172.161.255.12
+         OVIPVirtualHostname: bschcpers
+     HACluster: hcpappcluster
+
+  bschcpa:
+     Template: /ec2/instances/sapapp/ha
+     FileSystems:
+        +usrsap:
+            Role: usrsap
+            Volumes:
+                - DeviceName: "/dev/sdb"
+                  Ebs:
+                    VolumeSize: "30"
+     Properties:
+        InstanceType: m5.large
+        SubnetId: !Ref btrappprd01az1
+        ImageId: ami-047538b8ff65f3422
+        UserData: |
+            #cloud-config
+            hostname: bschcpa
+            runcmd:
+              - mkdir /tmp/ssm
+              - cd /tmp/ssm
+              - wget https://s3.cn-northwest-1.amazonaws.com.cn/amazon-ssm-cn-northwest-1/latest/linux_amd64/amazon-ssm-agent.rpm
+              - sudo rpm --install amazon-ssm-agent.rpm
+              - sudo systemctl status amazon-ssm-agent
+        SecurityGroupIds:
+            - !Ref sapefssg
+            - !Ref sapappsg
+            - !Ref sapgeneralsg
+            - !Ref allgeneralsg
+        KeyName: hcm-prd-ascsa
+        PrivateIpAddress: 172.17.3.14
+        Tags:
+           - Key: Name
+             Value: bschcpa
+
+  bschcpb:
+     Template: /ec2/instances/sapapp/ha
+     FileSystems:
+        +usrsap:
+            Role: usrsap
+            Volumes:
+                - DeviceName: "/dev/sdb"
+                  Ebs:
+                    VolumeSize: "30"
+     Properties:
+        InstanceType: m5.large
+        SubnetId: !Ref btrappprd01az2
+        ImageId: ami-047538b8ff65f3422
+        UserData: |
+            #cloud-config
+            hostname: bschcpb
+            runcmd:
+              - mkdir /tmp/ssm
+              - cd /tmp/ssm
+              - wget https://s3.cn-northwest-1.amazonaws.com.cn/amazon-ssm-cn-northwest-1/latest/linux_amd64/amazon-ssm-agent.rpm
+              - sudo rpm --install amazon-ssm-agent.rpm
+              - sudo systemctl status amazon-ssm-agent
+        SecurityGroupIds:
+            - !Ref sapefssg
+            - !Ref sapappsg
+            - !Ref sapgeneralsg
+            - !Ref allgeneralsg
+        KeyName: hcm-prd-ascsb
+        PrivateIpAddress: 172.17.13.14
+        Tags:
+           - Key: Name
+             Value: bschcpb
+
+#AS
+  hcpas01:
+     #Type: BCS::SAP::ApplicationInstance
+     Template: /sap/instances/sapapp
+     System: HCP
+     Properties:
+         InstanceName: DVBEMGS00
+         InstanceNumber: 00
+         Role: PAS
+     EC2Instance: bschcpd1
+  hcpas02:
+     #Type: BCS::SAP::ApplicationInstance
+     Template: /sap/instances/sapapp
+     System: HCP
+     Properties:
+         InstanceName: D00
+         InstanceNumber: 00
+         Role: AAS
+     EC2Instance: bschcpd2
+  hcpas03:
+     #Type: BCS::SAP::ApplicationInstance
+     Template: /sap/instances/sapapp
+     System: HCP
+     Properties:
+         InstanceName: D00
+         InstanceNumber: 00
+         Role: AAS
+     EC2Instance: bschcpd3
+  hcpas04:
+     #Type: BCS::SAP::ApplicationInstance
+     Template: /sap/instances/sapapp
+     System: HCP
+     Properties:
+         InstanceName: D00
+         InstanceNumber: 00
+         Role: AAS
+     EC2Instance: bschcpd4
+
+  bschcpd1:
+     Template: /ec2/instances/sapapp
+     FileSystems:
+        +usrsap:
+            Role: usrsap
+            Volumes:
+                - DeviceName: "/dev/sdb"
+                  Ebs:
+                    VolumeSize: "30"
+     Properties:
+        InstanceType: r5.2xlarge
+        SubnetId: !Ref btrappprd01az1
+        ImageId: ami-047538b8ff65f3422
+        UserData: |
+            #cloud-config
+            hostname: bschcpd1
+            runcmd:
+              - mkdir /tmp/ssm
+              - cd /tmp/ssm
+              - wget https://s3.cn-northwest-1.amazonaws.com.cn/amazon-ssm-cn-northwest-1/latest/linux_amd64/amazon-ssm-agent.rpm
+              - sudo rpm --install amazon-ssm-agent.rpm
+              - sudo systemctl status amazon-ssm-agent
+        SecurityGroupIds:
+            - !Ref sapefssg
+            - !Ref sapappsg
+            - !Ref sapgeneralsg
+            - !Ref allgeneralsg
+        KeyName: hcm-prd-app1
+        PrivateIpAddress: 172.17.3.13
+        Tags:
+           - Key: Name
+             Value: bschcpd1
+
+  bschcpd3:
+     Template: /ec2/instances/sapapp
+     FileSystems:
+        +usrsap:
+            Role: usrsap
+            Volumes:
+                - DeviceName: "/dev/sdb"
+                  Ebs:
+                    VolumeSize: "30"
+     Properties:
+        InstanceType: r5.2xlarge
+        SubnetId: !Ref btrappprd01az1
+        ImageId: ami-047538b8ff65f3422
+        UserData: |
+            #cloud-config
+            hostname: bschcpd3
+            runcmd:
+              - mkdir /tmp/ssm
+              - cd /tmp/ssm
+              - wget https://s3.cn-northwest-1.amazonaws.com.cn/amazon-ssm-cn-northwest-1/latest/linux_amd64/amazon-ssm-agent.rpm
+              - sudo rpm --install amazon-ssm-agent.rpm
+              - sudo systemctl status amazon-ssm-agent
+        SecurityGroupIds:
+            - !Ref sapefssg
+            - !Ref sapappsg
+            - !Ref sapgeneralsg
+            - !Ref allgeneralsg
+        KeyName: hcm-prd-app3
+        PrivateIpAddress: 172.17.3.17
+        Tags:
+           - Key: Name
+             Value: bschcpd3
+
+  bschcpd2:
+     Template: /ec2/instances/sapapp
+     FileSystems:
+        +usrsap:
+            Role: usrsap
+            Volumes:
+                - DeviceName: "/dev/sdb"
+                  Ebs:
+                    VolumeSize: "30"
+     Properties:
+        InstanceType: r5.2xlarge
+        SubnetId: !Ref btrappprd01az2
+        ImageId: ami-047538b8ff65f3422
+        UserData: |
+            #cloud-config
+            hostname: bschcpd2
+            runcmd:
+              - mkdir /tmp/ssm
+              - cd /tmp/ssm
+              - wget https://s3.cn-northwest-1.amazonaws.com.cn/amazon-ssm-cn-northwest-1/latest/linux_amd64/amazon-ssm-agent.rpm
+              - sudo rpm --install amazon-ssm-agent.rpm
+              - sudo systemctl status amazon-ssm-agent
+        SecurityGroupIds:
+            - !Ref sapefssg
+            - !Ref sapappsg
+            - !Ref sapgeneralsg
+            - !Ref allgeneralsg
+        KeyName: hcm-prd-app2
+        PrivateIpAddress: 172.17.13.13
+        Tags:
+           - Key: Name
+             Value: bschcpd2
+
+  bschcpd3:
+     Template: /ec2/instances/sapapp
+     FileSystems:
+        +usrsap:
+            Role: usrsap
+            Volumes:
+                - DeviceName: "/dev/sdb"
+                  Ebs:
+                    VolumeSize: "30"
+     Properties:
+        InstanceType: r5.2xlarge
+        SubnetId: !Ref btrappprd01az1
+        ImageId: ami-047538b8ff65f3422
+        UserData: |
+            #cloud-config
+            hostname: bschcpd3
+            runcmd:
+              - mkdir /tmp/ssm
+              - cd /tmp/ssm
+              - wget https://s3.cn-northwest-1.amazonaws.com.cn/amazon-ssm-cn-northwest-1/latest/linux_amd64/amazon-ssm-agent.rpm
+              - sudo rpm --install amazon-ssm-agent.rpm
+              - sudo systemctl status amazon-ssm-agent
+        SecurityGroupIds:
+            - !Ref sapefssg
+            - !Ref sapappsg
+            - !Ref sapgeneralsg
+            - !Ref allgeneralsg
+        KeyName: hcm-prd-app3
+        PrivateIpAddress: 172.17.3.17
+        Tags:
+           - Key: Name
+             Value: bschcpd3
+
+  bschcpd4:
+     Template: /ec2/instances/sapapp
+     FileSystems:
+        +usrsap:
+            Role: usrsap
+            Volumes:
+                - DeviceName: "/dev/sdb"
+                  Ebs:
+                    VolumeSize: "30"
+     Properties:
+        InstanceType: r5.2xlarge
+        SubnetId: !Ref btrappprd01az2
+        ImageId: ami-047538b8ff65f3422
+        UserData: |
+            #cloud-config
+            hostname: bschcpd4
+            runcmd:
+              - mkdir /tmp/ssm
+              - cd /tmp/ssm
+              - wget https://s3.cn-northwest-1.amazonaws.com.cn/amazon-ssm-cn-northwest-1/latest/linux_amd64/amazon-ssm-agent.rpm
+              - sudo rpm --install amazon-ssm-agent.rpm
+              - sudo systemctl status amazon-ssm-agent
+        SecurityGroupIds:
+            - !Ref sapefssg
+            - !Ref sapappsg
+            - !Ref sapgeneralsg
+            - !Ref allgeneralsg
+        KeyName: hcm-prd-app4
+        PrivateIpAddress: 172.17.13.16
+        Tags:
+           - Key: Name
+             Value: bschcpd4
+
+Services: [ hacluster, globalfs, sap, bcs_sac.renderer, bcs_sac.deployer ]
